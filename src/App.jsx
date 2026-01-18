@@ -784,7 +784,7 @@ function App() {
             {posts.length === 0 && <p style={{ color: 'var(--text-dim)' }}>予約された投稿はありません。</p>}
             {posts.map(post => (
               <div key={post.id} className="post-item">
-                <img src={`${apiBase}/${post.imagePath}`} alt="投稿画像" className="post-thumb" />
+                <img src={post.imagePath.startsWith('https://') ? post.imagePath : `${apiBase}/${post.imagePath}`} alt="投稿画像" className="post-thumb" />
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
                     <span className={`status-badge ${post.status}`}>
