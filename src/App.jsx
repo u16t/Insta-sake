@@ -300,10 +300,11 @@ function App() {
     }
 
     setLoading(true);
+    const scheduleIso = new Date(scheduleTime).toISOString();
     const formData = new FormData();
     formData.append('image', image);
     formData.append('caption', caption);
-    formData.append('scheduleTime', scheduleTime);
+    formData.append('scheduleTime', scheduleIso);
 
     try {
       const resp = await fetch(`${apiBase}/api/schedule`, {
