@@ -582,7 +582,8 @@ nodeCron.schedule('* * * * *', async () => {
 const distPath = path.join(__dirname, 'dist');
 if (fs.existsSync(distPath)) {
     app.use(express.static(distPath));
-    app.get(/.*/, (req, res) => {
+    // Avoid returning HTML for API/uploads (missing files should 404)
+    app.get(/^(?!\/api\/|\/uploads\/).*/, (req, res) => {
         res.sendFile(path.join(distPath, 'index.html'));
     });
 }
