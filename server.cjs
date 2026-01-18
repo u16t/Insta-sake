@@ -71,15 +71,40 @@ async function removeBackgroundBuffer(imagePath) {
     formData.append('image_file', fs.createReadStream(imagePath));
     formData.append('size', 'auto');
 
-    const removeBgResp = await axios.post('https://api.remove.bg/v1.0/removebg', formData, {
-        headers: {
-            ...formData.getHeaders(),
-            'X-Api-Key': process.env.REMOVE_BG_API_KEY
-        },
-        responseType: 'arraybuffer'
-    });
+    try {
+        const removeBgResp = await axios.post('https://api.remove.bg/v1.0/removebg', formData, {
+            headers: {
+                ...formData.getHeaders(),
+                'X-Api-Key': process.env.REMOVE_BG_API_KEY
+            },
+            responseType: 'arraybuffer'
+        });
 
-    return Buffer.from(removeBgResp.data);
+        return Buffer.from(removeBgResp.data);
+    } catch (error) {
+        let message = 'Remove.bg request failed';
+        const buffer = error?.response?.data;
+        if (Buffer.isBuffer(buffer)) {
+            try {
+                const parsed = JSON.parse(buffer.toString('utf8'));
+                const title = parsed?.errors?.[0]?.title;
+                const code = parsed?.errors?.[0]?.code;
+                if (title || code) {
+                    message = `${title || 'Remove.bg error'}${code ? ` (${code})` : ''}`;
+                }
+            } catch (e) {
+                // keep default message
+            }
+        } else if (error?.response?.data?.errors?.[0]) {
+            const { title, code } = error.response.data.errors[0];
+            if (title || code) {
+                message = `${title || 'Remove.bg error'}${code ? ` (${code})` : ''}`;
+            }
+        } else if (error?.message) {
+            message = error.message;
+        }
+        throw new Error(message);
+    }
 }
 
 async function ensureImageUrlIsValid(imageUrl) {
