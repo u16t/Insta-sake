@@ -14,6 +14,11 @@ const FormData = require('form-data');
 
 const app = express();
 const port = process.env.PORT || 3001;
+const uploadsDir = path.join(__dirname, 'uploads');
+
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+}
 
 // Database setup
 const adapter = new FileSync('db.json');
@@ -41,12 +46,12 @@ prunePosts(100);
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use('/uploads', express.static('uploads'));
+app.use('/uploads', express.static(uploadsDir));
 
 // Multer setup for image storage
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        cb(null, 'uploads/');
+        cb(null, uploadsDir);
     },
     filename: (req, file, cb) => {
         cb(null, Date.now() + path.extname(file.originalname));
@@ -104,13 +109,17 @@ app.get('/api/config', (req, res) => {
     // Read directly from .env file to get latest values
     let envConfig = {};
     try {
-        const envContent = fs.readFileSync('.env', 'utf8');
-        envContent.split('\n').forEach(line => {
-            const [key, value] = line.split('=');
-            if (key && value) {
-                envConfig[key.trim()] = value.trim();
-            }
-        });
+        if (fs.existsSync('.env')) {
+            const envContent = fs.readFileSync('.env', 'utf8');
+            envContent.split('\n').forEach(line => {
+                const [key, value] = line.split('=');
+                if (key && value) {
+                    envConfig[key.trim()] = value.trim();
+                }
+            });
+        } else {
+            envConfig = process.env;
+        }
     } catch (e) {
         console.error('Error reading .env', e);
         // fallback to process.env if file read fails
