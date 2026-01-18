@@ -11,6 +11,14 @@ const axios = require('axios');
 const OpenAI = require('openai');
 const sharp = require('sharp');
 const FormData = require('form-data');
+const cloudinary = require('cloudinary').v2;
+
+// Cloudinary configuration
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -212,11 +220,34 @@ app.post('/api/config', (req, res) => {
     res.json({ message: 'Settings updated' });
 });
 
-app.post('/api/schedule', upload.single('image'), (req, res) => {
+app.post('/api/schedule', upload.single('image'), async (req, res) => {
     const { caption, scheduleTime } = req.body;
+
+    let imageUrl = '';
+    const localPath = req.file.path;
+
+    // Upload to Cloudinary if configured
+    if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
+        try {
+            const uploadResult = await cloudinary.uploader.upload(localPath, {
+                folder: 'insta-sake',
+                resource_type: 'image'
+            });
+            imageUrl = uploadResult.secure_url;
+            // Clean up local file after upload
+            fs.unlink(localPath, () => {});
+        } catch (e) {
+            console.error('Cloudinary upload failed:', e);
+            return res.status(500).json({ error: 'Image upload to Cloudinary failed' });
+        }
+    } else {
+        // Fallback to local path (won't work on Render free)
+        imageUrl = localPath;
+    }
+
     const post = {
         id: Date.now(),
-        imagePath: req.file.path,
+        imagePath: imageUrl,
         caption,
         scheduleTime,
         status: 'scheduled',
@@ -475,9 +506,15 @@ async function postToInstagram(post) {
     const baseUrl = process.env.PUBLIC_URL || process.env.BASE_URL;
     if (!accessToken) return { success: false, error: 'ACCESS_TOKEN is missing' };
     if (!instagramId) return { success: false, error: 'INSTAGRAM_USER_ID is missing' };
-    if (!baseUrl) return { success: false, error: 'PUBLIC_URL/BASE_URL is missing' };
 
-    const imageUrl = `${baseUrl}/${post.imagePath.replace(/\\/g, '/')}`;
+    // If imagePath is already a full URL (Cloudinary), use directly
+    let imageUrl;
+    if (post.imagePath.startsWith('https://')) {
+        imageUrl = post.imagePath;
+    } else {
+        if (!baseUrl) return { success: false, error: 'PUBLIC_URL/BASE_URL is missing' };
+        imageUrl = `${baseUrl}/${post.imagePath.replace(/\\/g, '/')}`;
+    }
 
     try {
         await ensureImageUrlIsValid(imageUrl);
