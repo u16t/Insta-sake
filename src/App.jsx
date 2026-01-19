@@ -3,6 +3,16 @@ import './index.css';
 
 function App() {
   console.log('App mounting...');
+  
+  // Auth state
+  const [authChecked, setAuthChecked] = useState(false);
+  const [authRequired, setAuthRequired] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem('authToken') || '');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
+
   const [image, setImage] = useState(null);
   const [preview, setPreview] = useState(null);
   const [caption, setCaption] = useState('');
@@ -45,6 +55,60 @@ function App() {
     (typeof window !== 'undefined' && window.location.hostname === 'localhost'
       ? 'http://localhost:3001'
       : '');
+
+  // Helper to add auth header to fetch requests
+  const authHeaders = () => authToken ? { 'X-Auth-Token': authToken } : {};
+
+  // Check auth status on mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const resp = await fetch(`${apiBase}/api/auth-status`, {
+          headers: authHeaders()
+        });
+        const data = await resp.json();
+        setAuthRequired(data.authRequired);
+        setAuthenticated(data.authenticated);
+      } catch (e) {
+        console.error('Auth check failed', e);
+      } finally {
+        setAuthChecked(true);
+      }
+    };
+    checkAuth();
+  }, [authToken]);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoginLoading(true);
+    setLoginError('');
+    try {
+      const resp = await fetch(`${apiBase}/api/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: loginPassword })
+      });
+      const data = await resp.json();
+      if (resp.ok && data.token) {
+        setAuthToken(data.token);
+        localStorage.setItem('authToken', data.token);
+        setAuthenticated(true);
+        setLoginPassword('');
+      } else {
+        setLoginError(data.error || 'ログイン失敗');
+      }
+    } catch (e) {
+      setLoginError('ログインエラー');
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    setAuthToken('');
+    localStorage.removeItem('authToken');
+    setAuthenticated(false);
+  };
 
   const applyCleanPreset = (preset) => {
     if (preset === 'center') {
@@ -91,7 +155,9 @@ function App() {
 
   const fetchConfig = async () => {
     try {
-      const resp = await fetch(`${apiBase}/api/config`);
+      const resp = await fetch(`${apiBase}/api/config`, {
+        headers: authHeaders()
+      });
       const data = await resp.json();
       console.log('Config loaded:', data);
 
@@ -109,7 +175,7 @@ function App() {
     try {
       const resp = await fetch(`${apiBase}/api/config`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ accessToken, instagramId, publicUrl, openAiKey, removeBgKey }),
       });
       if (resp.ok) {
@@ -158,6 +224,7 @@ function App() {
     try {
       const resp = await fetch(`${apiBase}/api/analyze-sake`, {
         method: 'POST',
+        headers: authHeaders(),
         body: formData
       });
       const data = await resp.json();
@@ -187,6 +254,7 @@ function App() {
     try {
       const resp = await fetch(`${apiBase}/api/generate-background`, {
         method: 'POST',
+        headers: authHeaders(),
         body: formData
       });
       const data = await resp.json();
@@ -221,6 +289,7 @@ function App() {
     try {
       const resp = await fetch(`${apiBase}/api/clean-background`, {
         method: 'POST',
+        headers: authHeaders(),
         body: formData
       });
       const data = await resp.json();
@@ -253,6 +322,7 @@ function App() {
     try {
       const resp = await fetch(`${apiBase}/api/label-export`, {
         method: 'POST',
+        headers: authHeaders(),
         body: formData
       });
       const data = await resp.json();
@@ -309,6 +379,7 @@ function App() {
     try {
       const resp = await fetch(`${apiBase}/api/schedule`, {
         method: 'POST',
+        headers: authHeaders(),
         body: formData,
       });
       if (resp.ok) {
@@ -331,7 +402,9 @@ function App() {
 
   const fetchPosts = async () => {
     try {
-      const resp = await fetch(`${apiBase}/api/posts`);
+      const resp = await fetch(`${apiBase}/api/posts`, {
+        headers: authHeaders()
+      });
       const data = await resp.json();
       setPosts(data);
     } catch (err) {
@@ -342,7 +415,8 @@ function App() {
   const retryPost = async (postId) => {
     try {
       const resp = await fetch(`${apiBase}/api/posts/${postId}/retry`, {
-        method: 'POST'
+        method: 'POST',
+        headers: authHeaders()
       });
       if (resp.ok) {
         fetchPosts();
@@ -360,7 +434,8 @@ function App() {
     if (!confirm('この投稿を削除しますか？')) return;
     try {
       const resp = await fetch(`${apiBase}/api/posts/${postId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: authHeaders()
       });
       if (resp.ok) {
         fetchPosts();
@@ -416,6 +491,43 @@ function App() {
     </div>
   );
 
+  // Loading state while checking auth
+  if (!authChecked) {
+    return (
+      <div className="app-container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
+        <div className="spinner"></div>
+      </div>
+    );
+  }
+
+  // Login screen if auth required but not authenticated
+  if (authRequired && !authenticated) {
+    return (
+      <div className="app-container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
+        <div className="card" style={{ maxWidth: '400px', width: '100%', textAlign: 'center' }}>
+          <h1 style={{ marginBottom: '0.5rem' }}>🍶 InstaFlow</h1>
+          <p style={{ color: 'var(--text-dim)', marginBottom: '2rem' }}>ログインしてください</p>
+          <form onSubmit={handleLogin}>
+            <div className="input-group">
+              <label>パスワード</label>
+              <input
+                type="password"
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                placeholder="パスワードを入力"
+                autoFocus
+              />
+            </div>
+            {loginError && <p style={{ color: '#ef4444', marginBottom: '1rem' }}>{loginError}</p>}
+            <button type="submit" disabled={loginLoading}>
+              {loginLoading ? 'ログイン中...' : 'ログイン'}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="app-container">
       <header>
@@ -424,12 +536,22 @@ function App() {
             <h1>InstaFlow</h1>
             <p className="subtitle">Instagram投稿をスタイリッシュに自動化</p>
           </div>
-          <button
-            onClick={() => setShowSettings(!showSettings)}
-            style={{ width: 'auto', padding: '0.5rem 1rem', background: 'rgba(255,255,255,0.1)' }}
-          >
-            {showSettings ? '閉じる' : '⚙️ 設定'}
-          </button>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button
+              onClick={() => setShowSettings(!showSettings)}
+              style={{ width: 'auto', padding: '0.5rem 1rem', background: 'rgba(255,255,255,0.1)' }}
+            >
+              {showSettings ? '閉じる' : '⚙️ 設定'}
+            </button>
+            {authRequired && (
+              <button
+                onClick={handleLogout}
+                style={{ width: 'auto', padding: '0.5rem 1rem', background: 'rgba(239,68,68,0.2)', color: '#ef4444' }}
+              >
+                ログアウト
+              </button>
+            )}
+          </div>
         </div>
       </header>
 

@@ -61,6 +61,53 @@ app.get('/health', (req, res) => {
     res.json({ ok: true });
 });
 
+// Simple token-based authentication
+const crypto = require('crypto');
+let authToken = null;
+
+function generateToken() {
+    return crypto.randomBytes(32).toString('hex');
+}
+
+function requireAuth(req, res, next) {
+    const appPassword = process.env.APP_PASSWORD;
+    if (!appPassword) {
+        // No password set, skip auth
+        return next();
+    }
+    const token = req.headers['x-auth-token'];
+    if (!token || token !== authToken) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+    next();
+}
+
+app.post('/api/login', (req, res) => {
+    const { password } = req.body;
+    const appPassword = process.env.APP_PASSWORD;
+    
+    if (!appPassword) {
+        // No password configured, auto-login
+        authToken = generateToken();
+        return res.json({ success: true, token: authToken });
+    }
+    
+    if (password === appPassword) {
+        authToken = generateToken();
+        return res.json({ success: true, token: authToken });
+    }
+    
+    res.status(401).json({ error: 'Invalid password' });
+});
+
+app.get('/api/auth-status', (req, res) => {
+    const appPassword = process.env.APP_PASSWORD;
+    res.json({ 
+        authRequired: !!appPassword,
+        authenticated: !appPassword || (req.headers['x-auth-token'] === authToken && authToken !== null)
+    });
+});
+
 // Multer setup for image storage
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -141,9 +188,8 @@ async function ensureImageUrlIsValid(imageUrl) {
     }
 }
 
-// API Endpoints
-// API Endpoints
-app.get('/api/config', (req, res) => {
+// API Endpoints (protected)
+app.get('/api/config', requireAuth, (req, res) => {
     // Read directly from .env file to get latest values
     let envConfig = {};
     try {
@@ -174,7 +220,7 @@ app.get('/api/config', (req, res) => {
     });
 });
 
-app.post('/api/config', (req, res) => {
+app.post('/api/config', requireAuth, (req, res) => {
     const { accessToken, instagramId, publicUrl, openAiKey, removeBgKey } = req.body;
 
     // Read existing to preserve other keys if any
@@ -220,7 +266,7 @@ app.post('/api/config', (req, res) => {
     res.json({ message: 'Settings updated' });
 });
 
-app.post('/api/schedule', upload.single('image'), async (req, res) => {
+app.post('/api/schedule', requireAuth, upload.single('image'), async (req, res) => {
     const { caption, scheduleTime } = req.body;
 
     let imageUrl = '';
@@ -259,7 +305,7 @@ app.post('/api/schedule', upload.single('image'), async (req, res) => {
     res.json({ message: 'Post scheduled successfully!', post });
 });
 
-app.get('/api/posts', (req, res) => {
+app.get('/api/posts', requireAuth, (req, res) => {
     const posts = db.get('posts').value();
     res.json(posts);
 });
@@ -267,7 +313,7 @@ app.get('/api/posts', (req, res) => {
 // --- AI Endpoints ---
 
 // 1. Analyze Sake Brand
-app.post('/api/analyze-sake', upload.single('image'), async (req, res) => {
+app.post('/api/analyze-sake', requireAuth, upload.single('image'), async (req, res) => {
     if (!openai) return res.status(500).json({ error: 'OpenAI API Key not configured' });
 
     try {
@@ -298,7 +344,7 @@ app.post('/api/analyze-sake', upload.single('image'), async (req, res) => {
 });
 
 // 2. Generate Background & Composite
-app.post('/api/generate-background', upload.single('image'), async (req, res) => {
+app.post('/api/generate-background', requireAuth, upload.single('image'), async (req, res) => {
     const { prompt } = req.body;
     // if (!process.env.REMOVE_BG_API_KEY) return res.status(500).json({ error: 'Remove.bg API Key not configured' });
     if (!openai) return res.status(500).json({ error: 'OpenAI API Key not configured' });
@@ -376,7 +422,7 @@ app.post('/api/generate-background', upload.single('image'), async (req, res) =>
 });
 
 // 3. Clean Background (remove + neutral studio backdrop)
-app.post('/api/clean-background', upload.single('image'), async (req, res) => {
+app.post('/api/clean-background', requireAuth, upload.single('image'), async (req, res) => {
     try {
         const originalPath = req.file.path;
         const filename = path.basename(originalPath, path.extname(originalPath));
@@ -445,7 +491,7 @@ app.post('/api/clean-background', upload.single('image'), async (req, res) => {
 });
 
 // 4. Label Export (transparent/white background)
-app.post('/api/label-export', upload.single('image'), async (req, res) => {
+app.post('/api/label-export', requireAuth, upload.single('image'), async (req, res) => {
     try {
         const originalPath = req.file.path;
         const filename = path.basename(originalPath, path.extname(originalPath));
@@ -562,7 +608,7 @@ async function postToInstagram(post) {
 }
 
 // Manual retry endpoint
-app.post('/api/posts/:id/retry', async (req, res) => {
+app.post('/api/posts/:id/retry', requireAuth, async (req, res) => {
     const postId = Number(req.params.id);
     const post = db.get('posts').find({ id: postId }).value();
     if (!post) return res.status(404).json({ error: 'Post not found' });
@@ -582,7 +628,7 @@ app.post('/api/posts/:id/retry', async (req, res) => {
 });
 
 // Delete post
-app.delete('/api/posts/:id', (req, res) => {
+app.delete('/api/posts/:id', requireAuth, (req, res) => {
     const postId = Number(req.params.id);
     const post = db.get('posts').find({ id: postId }).value();
     if (!post) return res.status(404).json({ error: 'Post not found' });
