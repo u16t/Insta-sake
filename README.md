@@ -1,5 +1,9 @@
 # React + Vite
 
+## 動作環境
+
+- Node.js **24.22.1 以上**（`.nvmrc` 参照）。2026-10-21 の Node.js セキュリティリリース（Brotli デコーダ RCE / TLS ホスト名検証バイパス等、[公式告知](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases)）の修正版。`server.cjs` を動かすマシンの Node.js も `nvm use` 等で更新すること。
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:
